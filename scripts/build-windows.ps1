@@ -36,7 +36,11 @@ if ($LASTEXITCODE) { throw 'git clone failed' }
 if ((git -C $rzSrc rev-parse HEAD) -ne $v.RZ_GHIDRA_COMMIT) { throw "rz-ghidra $($v.RZ_GHIDRA_TAG) is not commit $($v.RZ_GHIDRA_COMMIT)" }
 $build = Join-Path $Work 'rz-ghidra-build'
 # Windows has no system zlib, which rz-ghidra asks for by default: have it fetch and build its own (a pinned zlib 1.3.1).
-cmake -S $rzSrc -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$stage" "-DCMAKE_INSTALL_PREFIX=$stage" -DUSE_SYSTEM_ZLIB=OFF
+# The plugin folder is given relative and the prefix with forward slashes: rz-ghidra bakes "<prefix>/<plugin folder>/rz_ghidra_sleigh" into the plugin
+# as a C string, and rizin's own plugin folder setting has backslashes (\r, \p ...) that the compiler reads as escape sequences. TA points the plugin at
+# its Sleigh data with SLEIGHHOME at run time anyway, so the baked path only has to compile.
+$stageFwd = $stage.Replace('\', '/')
+cmake -S $rzSrc -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$stageFwd" "-DCMAKE_INSTALL_PREFIX=$stageFwd" -DRIZIN_INSTALL_PLUGDIR=lib/rizin/plugins -DUSE_SYSTEM_ZLIB=OFF
 if ($LASTEXITCODE) { throw 'cmake configure failed' }
 # Keep going after a failure (-k 0) so one run shows every error, log it, and on failure print just the errors: the compiler's
 # own message is lines above ninja's final "build stopped", buried in warnings.
