@@ -7,21 +7,6 @@ param([string]$Work = (Join-Path $PSScriptRoot '..\work\win-x64'), [string]$Out 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
-# Windows' own tar (bsdtar): on the CI runners a bare "tar" can be Git's GNU tar, which reads "D:\..." as a remote host. Every call has a time limit,
-# so a hang fails the build with its name instead of waiting for the job to time out.
-$tar = Join-Path $env:SystemRoot 'System32\tar.exe'
-if (-not (Test-Path $tar)) { throw "missing tool: $tar" }
-function Invoke-Tar([string[]]$TarArgs, [int]$TimeoutSeconds = 300) {
-    Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] tar $($TarArgs -join ' ')"
-    $psi = [Diagnostics.ProcessStartInfo]::new($tar)
-    foreach ($a in $TarArgs) { $psi.ArgumentList.Add($a) }
-    $psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true
-    $proc = [Diagnostics.Process]::Start($psi)
-    $proc.StandardInput.Close()
-    if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) { $proc.Kill($true); throw "tar did not finish within $TimeoutSeconds s: $($TarArgs -join ' ')" }
-    if ($proc.ExitCode) { throw "tar failed (exit $($proc.ExitCode)): $($TarArgs -join ' ')" }
-}
-
 $v = @{}
 Get-Content (Join-Path $root 'VERSIONS') | Where-Object { $_ -match '^[A-Z_0-9]+=' } | ForEach-Object { $k, $val = $_ -split '=', 2; $v[$k] = $val.Trim() }
 $rid = 'win-x64'
@@ -105,11 +90,12 @@ Write-Host '== self-test (moved folder, path with a space)'
 Write-Host '== zip'
 $zipOut = Join-Path $Out "$name.zip"
 if (Test-Path $zipOut) { Remove-Item $zipOut }
-Invoke-Tar @('-a', '-c', '-f', $zipOut, '-C', (Split-Path $stage), 'rizin')
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[IO.Compression.ZipFile]::CreateFromDirectory($stage, $zipOut, [IO.Compression.CompressionLevel]::Optimal, $true)   # entries start with rizin/
 "$((Get-FileHash $zipOut -Algorithm SHA256).Hash.ToLower())  $name.zip" | Set-Content "$zipOut.sha256" -Encoding ASCII
 "built $zipOut ($([math]::Round((Get-Item $zipOut).Length / 1MB, 1)) MB)"
 
 Write-Host '== self-test of the unzipped result'
 $check = Join-Path $Work 'unzipped'; New-Item -ItemType Directory -Force $check | Out-Null
-Invoke-Tar @('-xf', $zipOut, '-C', $check)
+[IO.Compression.ZipFile]::ExtractToDirectory($zipOut, $check)
 & (Join-Path $PSScriptRoot 'selftest.ps1') -Src (Join-Path $check 'rizin') -Expected $v.RIZIN_VERSION
