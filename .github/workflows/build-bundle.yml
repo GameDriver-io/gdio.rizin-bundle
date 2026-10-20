@@ -21,19 +21,38 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    name: choose platforms
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      # The matrix context is not available in a job-level `if`, so the platforms to build are chosen here and handed to the build job.
+      - id: m
+        env:
+          SELECTED: ${{ inputs.platform }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          selected = os.environ["SELECTED"]
+          platforms = [
+              {"rid": "osx-arm64", "os": "macos-14"},
+              # GitHub retires runner images over time; if this label stops resolving, pick the current Intel macOS image.
+              {"rid": "osx-x64", "os": "macos-15-intel"},
+              {"rid": "win-x64", "os": "windows-2022"},
+          ]
+          chosen = [p for p in platforms if selected in ("all", p["rid"])]
+          print("matrix=" + json.dumps({"include": chosen}))
+          PY
+
   build:
     name: build ${{ matrix.rid }}
-    if: ${{ inputs.platform == 'all' || inputs.platform == matrix.rid }}
+    needs: plan
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { rid: osx-arm64, os: macos-14 }
-          # GitHub retires runner images over time; if this label stops resolving, pick the current Intel macOS image.
-          - { rid: osx-x64, os: macos-15-intel }
-          - { rid: win-x64, os: windows-2022 }
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 
