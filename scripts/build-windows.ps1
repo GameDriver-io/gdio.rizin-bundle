@@ -38,8 +38,17 @@ $build = Join-Path $Work 'rz-ghidra-build'
 # Windows has no system zlib, which rz-ghidra asks for by default: have it fetch and build its own (a pinned zlib 1.3.1).
 cmake -S $rzSrc -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$stage" "-DCMAKE_INSTALL_PREFIX=$stage" -DUSE_SYSTEM_ZLIB=OFF
 if ($LASTEXITCODE) { throw 'cmake configure failed' }
-cmake --build $build
-if ($LASTEXITCODE) { throw 'cmake build failed' }
+# Keep going after a failure (-k 0) so one run shows every error, log it, and on failure print just the errors: the compiler's
+# own message is lines above ninja's final "build stopped", buried in warnings.
+$buildLog = Join-Path $Work 'rz-ghidra-build.log'
+cmake --build $build -- -k 0 2>&1 | Tee-Object -FilePath $buildLog | Out-Host
+if ($LASTEXITCODE) {
+    Write-Host '=============== the build failed: first errors ==============='
+    Select-String -Path $buildLog -Pattern 'FAILED:', ' error C\d+', 'fatal error', ' error LNK\d+', 'CMake Error' -Context 0, 3 |
+        Select-Object -First 30 | ForEach-Object { $_.ToString() }
+    Write-Host '=============================================================='
+    throw 'cmake build failed'
+}
 cmake --install $build
 if ($LASTEXITCODE) { throw 'cmake install failed' }
 
