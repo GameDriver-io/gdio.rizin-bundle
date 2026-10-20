@@ -1,0 +1,18 @@
+# The pinned inputs of one bundle. Everything the build downloads is checked against the hashes below.
+# Change a version here, run the "build-bundle" workflow, and publish the result; nothing else is edited.
+
+# rizin (the disassembler/analysis tool the decompiler plugin runs inside)
+RIZIN_VERSION=0.9.1
+RIZIN_SRC_URL=https://github.com/rizinorg/rizin/releases/download/v0.9.1/rizin-src-v0.9.1.tar.xz
+RIZIN_SRC_SHA256=7ac1cd7daca7afdda742e15478b1f747fc1f813e496fee71839d1e109e543dca
+# rizin's own prebuilt Windows package (built with clang-cl; includes headers, import libraries and DLLs)
+RIZIN_WIN_URL=https://github.com/rizinorg/rizin/releases/download/v0.9.1/rizin-windows-shared64-v0.9.1.zip
+RIZIN_WIN_SHA256=45ffa004e26653eaee8d262b8e6eeae09402a7d319c1f20a2ba794bd6af1cc28
+
+# rz-ghidra (the Ghidra decompiler as a rizin plugin: gives the `pdg` command). Built from source at this tag/commit.
+RZ_GHIDRA_VERSION=0.9.0
+RZ_GHIDRA_TAG=v0.9.0
+RZ_GHIDRA_COMMIT=999df7b8e78919b75a330b4710acaf8f956f65cc
+
+# Bump when the build recipe changes without a version change, so the release gets a new name.
+BUNDLE_REVISION=1
