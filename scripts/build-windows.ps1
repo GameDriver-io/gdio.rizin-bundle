@@ -81,14 +81,13 @@ Get-ChildItem (Join-Path $stage 'bin') -Filter *.exe | Where-Object { $_.Name -n
 Write-Host '== licences and manifest'
 $lic = Join-Path $stage 'licenses'; New-Item -ItemType Directory -Force $lic | Out-Null
 foreach ($f in Get-ChildItem $rzSrc -File | Where-Object { $_.Name -match '^(COPYING|LICENSE|NOTICE)' }) { Copy-Item $f.FullName (Join-Path $lic "rz-ghidra-$($f.Name)") }
-$srcTar = Join-Path $Work 'rizin-src.tar.xz'
-Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] downloading the rizin source for its licences"
+# rizin's licence texts, taken from its pinned tag (the same two files the macOS bundle carries). The source tarball is not unpacked here: tar never
+# finished extracting it on the Windows runner.
 $ProgressPreference = 'SilentlyContinue'
-Invoke-WebRequest -Uri $v.RIZIN_SRC_URL -OutFile $srcTar -TimeoutSec 300
-if ((Get-FileHash $srcTar -Algorithm SHA256).Hash.ToLower() -ne $v.RIZIN_SRC_SHA256) { throw 'the downloaded rizin source does not match the pinned SHA-256' }
-$licTmp = Join-Path $Work 'rizin-lic'; New-Item -ItemType Directory -Force $licTmp | Out-Null
-Invoke-Tar @('-xf', $srcTar, '-C', $licTmp, '--include', '*/COPYING*', '--include', '*/LICENSE*', '--include', '*/NOTICE*')
-foreach ($f in Get-ChildItem $licTmp -Recurse -File) { Copy-Item $f.FullName (Join-Path $lic "rizin-$($f.Name)") }
+foreach ($f in 'COPYING', 'COPYING.LESSER') {
+    Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] rizin $f"
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/rizinorg/rizin/v$($v.RIZIN_VERSION)/$f" -OutFile (Join-Path $lic "rizin-v$($v.RIZIN_VERSION)-$f") -TimeoutSec 120
+}
 
 $pluginFile = Get-ChildItem $stage -Recurse -Filter 'core_ghidra.dll' | Select-Object -First 1
 if (-not $pluginFile) { throw 'the rz-ghidra plugin was not installed' }
