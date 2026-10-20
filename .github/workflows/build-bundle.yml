@@ -7,6 +7,11 @@ name: build-bundle
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: 'Which platform to build (a release needs all three)'
+        type: choice
+        options: [all, win-x64, osx-arm64, osx-x64]
+        default: all
       publish:
         description: 'Also create (or update) the GitHub Release for these versions'
         type: boolean
@@ -18,6 +23,7 @@ permissions:
 jobs:
   build:
     name: build ${{ matrix.rid }}
+    if: ${{ inputs.platform == 'all' || inputs.platform == matrix.rid }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -59,7 +65,7 @@ jobs:
   release:
     name: publish release
     needs: build
-    if: ${{ inputs.publish }}
+    if: ${{ inputs.publish && inputs.platform == 'all' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write      # asked for here, by this job only (the repository's default token is read-only)
