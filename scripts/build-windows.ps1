@@ -35,7 +35,8 @@ git clone --quiet --depth 1 --branch $v.RZ_GHIDRA_TAG --recurse-submodules --sha
 if ($LASTEXITCODE) { throw 'git clone failed' }
 if ((git -C $rzSrc rev-parse HEAD) -ne $v.RZ_GHIDRA_COMMIT) { throw "rz-ghidra $($v.RZ_GHIDRA_TAG) is not commit $($v.RZ_GHIDRA_COMMIT)" }
 $build = Join-Path $Work 'rz-ghidra-build'
-cmake -S $rzSrc -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$stage" "-DCMAKE_INSTALL_PREFIX=$stage"
+# Windows has no system zlib, which rz-ghidra asks for by default: have it fetch and build its own (a pinned zlib 1.3.1).
+cmake -S $rzSrc -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$stage" "-DCMAKE_INSTALL_PREFIX=$stage" -DUSE_SYSTEM_ZLIB=OFF
 if ($LASTEXITCODE) { throw 'cmake configure failed' }
 cmake --build $build
 if ($LASTEXITCODE) { throw 'cmake build failed' }
