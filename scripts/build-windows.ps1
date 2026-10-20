@@ -7,12 +7,27 @@ param([string]$Work = (Join-Path $PSScriptRoot '..\work\win-x64'), [string]$Out 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
+# Windows' own tar (bsdtar): on the CI runners a bare "tar" can be Git's GNU tar, which reads "D:\..." as a remote host. Every call has a time limit,
+# so a hang fails the build with its name instead of waiting for the job to time out.
+$tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+if (-not (Test-Path $tar)) { throw "missing tool: $tar" }
+function Invoke-Tar([string[]]$TarArgs, [int]$TimeoutSeconds = 300) {
+    Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] tar $($TarArgs -join ' ')"
+    $psi = [Diagnostics.ProcessStartInfo]::new($tar)
+    foreach ($a in $TarArgs) { $psi.ArgumentList.Add($a) }
+    $psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true
+    $proc = [Diagnostics.Process]::Start($psi)
+    $proc.StandardInput.Close()
+    if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) { $proc.Kill($true); throw "tar did not finish within $TimeoutSeconds s: $($TarArgs -join ' ')" }
+    if ($proc.ExitCode) { throw "tar failed (exit $($proc.ExitCode)): $($TarArgs -join ' ')" }
+}
+
 $v = @{}
 Get-Content (Join-Path $root 'VERSIONS') | Where-Object { $_ -match '^[A-Z_0-9]+=' } | ForEach-Object { $k, $val = $_ -split '=', 2; $v[$k] = $val.Trim() }
 $rid = 'win-x64'
 $name = "gdio-rizin-bundle-rizin$($v.RIZIN_VERSION)-rzghidra$($v.RZ_GHIDRA_VERSION)-r$($v.BUNDLE_REVISION)-$rid"
 
-foreach ($tool in 'cl', 'cmake', 'ninja', 'git', 'tar') {
+foreach ($tool in 'cl', 'cmake', 'ninja', 'git') {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "missing tool: $tool (cl needs an MSVC developer environment)" }
 }
 if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
@@ -67,10 +82,12 @@ Write-Host '== licences and manifest'
 $lic = Join-Path $stage 'licenses'; New-Item -ItemType Directory -Force $lic | Out-Null
 foreach ($f in Get-ChildItem $rzSrc -File | Where-Object { $_.Name -match '^(COPYING|LICENSE|NOTICE)' }) { Copy-Item $f.FullName (Join-Path $lic "rz-ghidra-$($f.Name)") }
 $srcTar = Join-Path $Work 'rizin-src.tar.xz'
-Invoke-WebRequest -Uri $v.RIZIN_SRC_URL -OutFile $srcTar
+Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] downloading the rizin source for its licences"
+$ProgressPreference = 'SilentlyContinue'
+Invoke-WebRequest -Uri $v.RIZIN_SRC_URL -OutFile $srcTar -TimeoutSec 300
 if ((Get-FileHash $srcTar -Algorithm SHA256).Hash.ToLower() -ne $v.RIZIN_SRC_SHA256) { throw 'the downloaded rizin source does not match the pinned SHA-256' }
 $licTmp = Join-Path $Work 'rizin-lic'; New-Item -ItemType Directory -Force $licTmp | Out-Null
-tar -xf $srcTar -C $licTmp --include '*/COPYING*' --include '*/LICENSE*' --include '*/NOTICE*'
+Invoke-Tar @('-xf', $srcTar, '-C', $licTmp, '--include', '*/COPYING*', '--include', '*/LICENSE*', '--include', '*/NOTICE*')
 foreach ($f in Get-ChildItem $licTmp -Recurse -File) { Copy-Item $f.FullName (Join-Path $lic "rizin-$($f.Name)") }
 
 $pluginFile = Get-ChildItem $stage -Recurse -Filter 'core_ghidra.dll' | Select-Object -First 1
@@ -89,12 +106,11 @@ Write-Host '== self-test (moved folder, path with a space)'
 Write-Host '== zip'
 $zipOut = Join-Path $Out "$name.zip"
 if (Test-Path $zipOut) { Remove-Item $zipOut }
-tar -a -c -f $zipOut -C (Split-Path $stage) rizin
-if ($LASTEXITCODE) { throw 'zip failed' }
+Invoke-Tar @('-a', '-c', '-f', $zipOut, '-C', (Split-Path $stage), 'rizin')
 "$((Get-FileHash $zipOut -Algorithm SHA256).Hash.ToLower())  $name.zip" | Set-Content "$zipOut.sha256" -Encoding ASCII
 "built $zipOut ($([math]::Round((Get-Item $zipOut).Length / 1MB, 1)) MB)"
 
 Write-Host '== self-test of the unzipped result'
 $check = Join-Path $Work 'unzipped'; New-Item -ItemType Directory -Force $check | Out-Null
-tar -xf $zipOut -C $check
+Invoke-Tar @('-xf', $zipOut, '-C', $check)
 & (Join-Path $PSScriptRoot 'selftest.ps1') -Src (Join-Path $check 'rizin') -Expected $v.RIZIN_VERSION
